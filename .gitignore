@@ -216,6 +216,7 @@ events/
 *.xls
 *.xlsx
 *.csv
+csv_output/
 
 # GPS cache
 gps_cache/
