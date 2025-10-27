@@ -1,0 +1,12 @@
+pandas
+pyarrow
+pyyaml
+fastparquet
+pycryptodomex
+gnupg
+rospkg
+geographiclib
+pyproj
+openpyxl
+xlrd
+tqdm
