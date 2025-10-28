@@ -696,7 +696,7 @@ def main():
 
             # Disable progress bars (useful for scripts)
             %(prog)s /path/to/bags "31.2304,121.4737" 50 --no-progress
-        """,
+            """,
         ),
     )
     parser.add_argument(
