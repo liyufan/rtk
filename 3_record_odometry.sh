@@ -6,5 +6,6 @@ set -euo pipefail
 
 EVENTS_DIR=${1:-"events"}
 SAVE_DIR=${2:-"processed_bags"}
+PROJECT_NAME=${3:-"CEDD"}
 
-python3 src/process.py $EVENTS_DIR $SAVE_DIR
+python3 src/process.py $EVENTS_DIR $SAVE_DIR --project-name $PROJECT_NAME

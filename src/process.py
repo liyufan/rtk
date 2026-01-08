@@ -16,7 +16,11 @@ from typing import Optional
 
 
 def process_events(
-    json_file: str, intersection_num: str, save_dir: str, dry_run: bool = False
+    json_file: str,
+    project_name: str,
+    intersection_num: str,
+    save_dir: str,
+    dry_run: bool = False,
 ):
     """Process events in a single JSON file"""
     try:
@@ -41,7 +45,7 @@ def process_events(
             original_bag_name = os.path.basename(bag_path)
 
             # Determine recording file name, save to save directory
-            output_bag_name = f'HW_J{intersection_num}_{original_bag_name}'
+            output_bag_name = f'{project_name}_J{intersection_num}_{original_bag_name}'
             output_bag_path = os.path.join(save_dir, output_bag_name)
 
             print(f'Preparing to process bag file: {original_bag_name}')
@@ -97,9 +101,11 @@ def process_events(
         for i, (bag_path, start_time, duration, output_bag_path) in enumerate(
             bag_tasks, 1
         ):
+            # Convert output_bag_path to output_prefix (remove .bag extension)
+            output_prefix = os.path.splitext(output_bag_path)[0]
             print(f'\n=== Starting to process bag file {i}/{len(bag_tasks)} ===')
             execute_recording_command(
-                bag_path, start_time, duration, output_bag_path, dry_run
+                bag_path, start_time, duration, output_prefix, dry_run
             )
             print(f'=== Bag file {i}/{len(bag_tasks)} processing completed ===\n')
 
@@ -109,14 +115,68 @@ def process_events(
         print(f'Error processing file {json_file}: {e}')
 
 
+def rename_pcd_file(output_prefix: str, pcd_dir: str = None):
+    """
+    Rename scans.pcd file to prevent overwriting.
+    Uses the same naming format as output_prefix.
+
+    Args:
+        output_prefix: Prefix for output files (without extension, used to generate matching name)
+        pcd_dir: Directory where PCD files are stored (default: FAST_LIO/PCD/)
+    """
+    if pcd_dir is None:
+        # Use rospack to find fast_lio package path
+        try:
+            result = subprocess.run(
+                ['rospack', 'find', 'fast_lio'],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            fast_lio_path = result.stdout.strip()
+            pcd_dir = os.path.join(fast_lio_path, 'PCD')
+        except subprocess.CalledProcessError:
+            print(
+                'Warning: Could not find fast_lio package using rospack, skipping PCD rename'
+            )
+            return
+        except FileNotFoundError:
+            print('Warning: rospack command not found, skipping PCD rename')
+            return
+
+        if not os.path.isdir(pcd_dir):
+            print(f'Warning: PCD directory not found at {pcd_dir}, skipping PCD rename')
+            return
+
+    scans_pcd_path = os.path.join(pcd_dir, 'scans.pcd')
+
+    if not os.path.exists(scans_pcd_path):
+        print(f'Warning: PCD file not found at {scans_pcd_path}, skipping rename')
+        return
+
+    # Generate filename matching output_prefix format
+    output_prefix_name = os.path.basename(output_prefix)
+    new_pcd_name = f'{output_prefix_name}.pcd'
+    new_pcd_path = os.path.join(pcd_dir, new_pcd_name)
+
+    try:
+        os.rename(scans_pcd_path, new_pcd_path)
+        print(f'PCD file renamed: {scans_pcd_path} -> {new_pcd_path}')
+    except Exception as e:
+        print(f'Error renaming PCD file: {e}')
+
+
 def execute_recording_command(
     bag_path: str,
     start_time: int,
     duration: Optional[int],
-    output_bag_path: str,
+    output_prefix: str,
     dry_run: bool = False,
 ):
     """Execute recording command"""
+    # Generate full output bag path from prefix
+    output_bag_path = f'{output_prefix}.bag'
+
     duration_str = str(duration) if duration is not None else 'to end of bag'
     bag_name = os.path.basename(bag_path)
     output_name = os.path.basename(output_bag_path)
@@ -134,6 +194,9 @@ def execute_recording_command(
         print(f'2. rosbag record -O {output_bag_path} /Odometry')
         duration_part = f'--duration {duration}' if duration is not None else ''
         print(f'3. rosbag play {bag_path} --start {start_time} {duration_part}')
+        output_prefix_name = os.path.basename(output_prefix)
+        new_pcd_name = f'{output_prefix_name}.pcd'
+        print(f'4. Rename PCD file: scans.pcd -> {new_pcd_name}')
         return
 
     # Store process objects
@@ -189,16 +252,51 @@ def execute_recording_command(
 
         print(f'Bag file {bag_name} processing completed')
 
+        # Stop recording first (no longer needed)
+        print('Stopping recording...')
+        if record_process.poll() is None:
+            try:
+                os.killpg(os.getpgid(record_process.pid), signal.SIGTERM)
+                record_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(os.getpgid(record_process.pid), signal.SIGKILL)
+            except Exception as e:
+                print(f'Error stopping recording: {e}')
+
+        # Close fast_lio gracefully to trigger PCD save
+        # fast_lio only saves PCD when it receives SIGINT (Ctrl+C)
+        print('Closing fast_lio to save PCD file...')
+        if fast_lio_process.poll() is None:
+            try:
+                # Send SIGINT to fast_lio (same as Ctrl+C), which will trigger PCD save
+                os.killpg(os.getpgid(fast_lio_process.pid), signal.SIGINT)
+                # Wait for fast_lio to exit (it will save PCD during shutdown)
+                print('Waiting for fast_lio to save PCD and exit...')
+                fast_lio_process.wait(timeout=10)
+                print('fast_lio exited successfully')
+            except subprocess.TimeoutExpired:
+                print('Warning: fast_lio did not exit in time, forcing kill')
+                os.killpg(os.getpgid(fast_lio_process.pid), signal.SIGKILL)
+            except Exception as e:
+                print(f'Error closing fast_lio: {e}')
+
+        # Wait a moment to ensure PCD file is written to disk
+        time.sleep(1)
+
+        # Rename PCD file after fast_lio has saved it
+        print('Renaming PCD file...')
+        rename_pcd_file(output_prefix)
+
     except Exception as e:
         print(f'Error during processing: {e}')
 
     finally:
-        # Clean up all processes
-        print('Cleaning up processes...')
+        # Clean up any remaining processes
+        print('Cleaning up remaining processes...')
         for name, process in processes:
             try:
                 if process.poll() is None:  # Process is still running
-                    print(f'Terminating process: {name}')
+                    print(f'Terminating remaining process: {name}')
                     os.killpg(os.getpgid(process.pid), signal.SIGTERM)
                     time.sleep(2)
                     if process.poll() is None:  # If still not ended, force kill
@@ -217,15 +315,20 @@ def main():
     )
     parser.add_argument(
         'events_dir',
-        nargs='?',
+        nargs=argparse.OPTIONAL,
         default='events',
         help='JSON files directory',
     )
     parser.add_argument(
         'save_dir',
-        nargs='?',
+        nargs=argparse.OPTIONAL,
         default='processed_bags',
         help='Directory to save recorded files',
+    )
+    parser.add_argument(
+        '--project-name',
+        default='CEDD',
+        help='Project name',
     )
     parser.add_argument(
         '--dry-run',
@@ -246,6 +349,7 @@ def main():
         os.makedirs(args.save_dir, exist_ok=True)
     print(f"Starting to process json directory: {args.events_dir}")
     print(f"Save directory: {args.save_dir}")
+    print(f"Project name: {args.project_name}")
     if args.dry_run:
         print("*** Dry run mode - only show commands, no actual execution ***")
     print("==========================================")
@@ -266,7 +370,9 @@ def main():
         intersection_num = filename_without_ext.split('_')[0]
 
         print(f'Processing file: {filename} (intersection number: {intersection_num})')
-        process_events(json_file, intersection_num, args.save_dir, args.dry_run)
+        process_events(
+            json_file, args.project_name, intersection_num, args.save_dir, args.dry_run
+        )
         print('==========================================')
 
     print('All files processing completed')

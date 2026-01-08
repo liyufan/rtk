@@ -223,3 +223,8 @@ gps_cache/
 
 # Processed bags
 processed_bags/
+
+# KML files
+*.kml
+kml/
+trajectories/
