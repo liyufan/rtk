@@ -118,7 +118,7 @@ def main():
         'bag_dir',
         nargs='?',
         default='processed_bags',
-        help='Directory containing input bag files',
+        help='Directory of processed bags containing odometry data',
     )
     parser.add_argument(
         'output_dir',

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Parse intersections from Excel and save to args.txt
-# Usage: bash 1_parase_excel.sh [excel_path]
+# Usage: ./1_parse_excel.sh [excel_path]
 
 set -euo pipefail
 

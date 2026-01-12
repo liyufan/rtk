@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Script for processing enter/exit events in JSON files and executing corresponding recording commands
-Usage: python process.py [events_directory] [save_directory] [--dry-run]
 """
 
 import argparse
@@ -113,6 +112,42 @@ def process_events(
 
     except Exception as e:
         print(f'Error processing file {json_file}: {e}')
+
+
+def process_bag_directory(
+    bags_dir: str,
+    project_name: str,
+    save_dir: str,
+    dry_run: bool = False,
+):
+    """Process all bag files in a directory"""
+    # Get all bag files
+    bag_files = glob.glob(os.path.join(bags_dir, '*.bag'))
+
+    if not bag_files:
+        print(f"No bag files found in {bags_dir}", file=sys.stderr)
+        return
+
+    print(f'Found {len(bag_files)} bag files in {bags_dir}')
+
+    # Process each bag file
+    for i, bag_path in enumerate(sorted(bag_files), 1):
+        bag_name = os.path.basename(bag_path)
+        bag_name_without_ext = os.path.splitext(bag_name)[0]
+
+        # Add project name prefix if not present
+        if project_name.lower() not in bag_name_without_ext.lower():
+            bag_name_without_ext = f'{project_name}_{bag_name_without_ext}'
+
+        output_prefix = os.path.join(save_dir, bag_name_without_ext)
+
+        print(f'\n=== Starting to process bag file {i}/{len(bag_files)} ===')
+        print(f'Bag file: {bag_name}')
+        print(f'Output prefix: {output_prefix}')
+
+        # Play entire bag (no start_time or duration needed)
+        execute_recording_command(bag_path, 0, None, output_prefix, dry_run)
+        print(f'=== Bag file {i}/{len(bag_files)} processing completed ===\n')
 
 
 def rename_pcd_file(output_prefix: str, pcd_dir: str = None):
@@ -310,15 +345,23 @@ def execute_recording_command(
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(
-        description='Process enter/exit events in JSON files and execute recording commands',
+        description='Process enter/exit events in JSON files or process filtered bag files',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument(
-        'events_dir',
-        nargs=argparse.OPTIONAL,
-        default='events',
+
+    # Create mutually exclusive group for input source
+    input_group = parser.add_mutually_exclusive_group()
+    input_group.add_argument(
+        '--events-dir',
+        default=None,
         help='JSON files directory',
     )
+    input_group.add_argument(
+        '--bags-dir',
+        default=None,
+        help='Directory containing bag files (bags already filtered by `rosbag filter` command)',
+    )
+
     parser.add_argument(
         'save_dir',
         nargs=argparse.OPTIONAL,
@@ -338,42 +381,72 @@ def main():
 
     args = parser.parse_args()
 
-    # Check if outputs directory exists
-    if not os.path.isdir(args.events_dir):
-        print(f"Error: json directory '{args.events_dir}' does not exist")
-        sys.exit(1)
+    # Validate that exactly one input source is provided
+    if args.events_dir is None and args.bags_dir is None:
+        parser.error("Either --events-dir or --bags-dir must be provided")
 
     # Check if save directory exists, create if not
     if not os.path.isdir(args.save_dir):
         print(f"Creating save directory: {args.save_dir}")
         os.makedirs(args.save_dir, exist_ok=True)
-    print(f"Starting to process json directory: {args.events_dir}")
+
     print(f"Save directory: {args.save_dir}")
     print(f"Project name: {args.project_name}")
     if args.dry_run:
         print("*** Dry run mode - only show commands, no actual execution ***")
     print("==========================================")
 
-    # Get all JSON files
-    json_files = glob.glob(os.path.join(args.events_dir, '*.json'))
+    # Process based on input source
+    if args.bags_dir is not None:
+        # Process bag files
+        if not os.path.isdir(args.bags_dir):
+            print(
+                f"Error: bag directory '{args.bags_dir}' does not exist",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
-    if not json_files:
-        print(f"No JSON files found in {args.events_dir}")
-        return
-
-    # Process each JSON file
-    for json_file in sorted(json_files):
-        filename = os.path.basename(json_file)
-        filename_without_ext = os.path.splitext(filename)[0]
-
-        # Extract intersection number from filename (assuming format "number_intersection_name")
-        intersection_num = filename_without_ext.split('_')[0]
-
-        print(f'Processing file: {filename} (intersection number: {intersection_num})')
-        process_events(
-            json_file, args.project_name, intersection_num, args.save_dir, args.dry_run
+        print(f"Processing bag directory: {args.bags_dir}")
+        process_bag_directory(
+            args.bags_dir, args.project_name, args.save_dir, args.dry_run
         )
-        print('==========================================')
+    else:
+        # Process JSON events files
+        if not os.path.isdir(args.events_dir):
+            print(
+                f"Error: json directory '{args.events_dir}' does not exist",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        print(f"Starting to process json directory: {args.events_dir}")
+
+        # Get all JSON files
+        json_files = glob.glob(os.path.join(args.events_dir, '*.json'))
+
+        if not json_files:
+            print(f"No JSON files found in {args.events_dir}")
+            return
+
+        # Process each JSON file
+        for json_file in sorted(json_files):
+            filename = os.path.basename(json_file)
+            filename_without_ext = os.path.splitext(filename)[0]
+
+            # Extract intersection number from filename (assuming format "number_intersection_name")
+            intersection_num = filename_without_ext.split('_')[0]
+
+            print(
+                f'Processing file: {filename} (intersection number: {intersection_num})'
+            )
+            process_events(
+                json_file,
+                args.project_name,
+                intersection_num,
+                args.save_dir,
+                args.dry_run,
+            )
+            print('==========================================')
 
     print('All files processing completed')
 
