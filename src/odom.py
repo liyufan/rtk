@@ -66,12 +66,12 @@ def extract_odometry_to_csv(bag_file: str, output_csv: str, topic: str = '/Odome
     # Open CSV file for writing
     try:
         with open(output_csv, 'w', newline='') as csvfile:
-            # Define CSV headers
-            # Format: Row, x, y, Yaw, T
-            headers = ['Row', 'x', 'y', 'Yaw', 'T']
+            # Define CSV header
+            # Format: Row, x, y, z, qx, qy, qz, qw, T
+            header = ['Row', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw', 'T']
 
             writer = csv.writer(csvfile)
-            writer.writerow(headers)  # Write the header row
+            writer.writerow(header)  # Write the header row
 
             row = 0
 
@@ -94,8 +94,19 @@ def extract_odometry_to_csv(bag_file: str, output_csv: str, topic: str = '/Odome
                 # Convert quaternion to Euler angles
                 roll, pitch, yaw = quaternion_to_euler(qx, qy, qz, qw)
 
+                # Extract twist linear velocity
+                vx = msg.twist.twist.linear.x
+                vy = msg.twist.twist.linear.y
+                vz = msg.twist.twist.linear.z
+
+                # Extract twist angular velocity
+                ax = msg.twist.twist.angular.x
+                ay = msg.twist.twist.angular.y
+                az = msg.twist.twist.angular.z
+                tcov = msg.twist.covariance
+
                 # Write data to CSV
-                writer.writerow([row, x, y, yaw, timestamp])
+                writer.writerow([row, x, y, z, qx, qy, qz, qw, timestamp])
                 row += 1
 
     except Exception as e:
@@ -116,25 +127,25 @@ def main():
     )
     parser.add_argument(
         'bag_dir',
-        nargs='?',
+        nargs=argparse.OPTIONAL,
         default='processed_bags',
         help='Directory of processed bags containing odometry data',
     )
     parser.add_argument(
         'output_dir',
-        nargs='?',
+        nargs=argparse.OPTIONAL,
         default='csv_output',
         help='Directory to save output CSV files',
     )
     parser.add_argument(
         '--topic',
         default='/Odometry',
-        help='ROS topic to extract from (default: /Odometry)',
+        help='ROS topic to extract from',
     )
     parser.add_argument(
         '--pattern',
         default='*.bag',
-        help='File pattern to match (default: *.bag)',
+        help='File pattern to match',
     )
 
     args = parser.parse_args()
