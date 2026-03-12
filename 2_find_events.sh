@@ -20,9 +20,11 @@ while IFS='|' read -r IDX NAME COORDS RADIUS; do
   SAFE_NAME=$(echo "$NAME" | sed 's/[\\/:\*?"<>|]/_/g; s/ /_/g')
   OUT_FILE="$OUT_DIR/${IDX}_${SAFE_NAME}.json"
   echo "Processing $NAME (index=$IDX, radius=$RADIUS) -> $OUT_FILE" >&2
-  python3 src/find.py \
-    "$BAGS_DIR" "$COORDS" "$RADIUS" \
-    --map-dir "$MAP_DIR" --output "$OUT_FILE"
+  python3 src/find.py "$BAGS_DIR" "$COORDS" "$RADIUS" --output "$OUT_FILE"
 done < "$ARGS_FILE"
 
-echo -e "\nDone. Outputs in $OUT_DIR" >&2
+# Export maps
+echo -e "\nExporting maps to $MAP_DIR/" >&2
+python3 src/find.py "$BAGS_DIR" --map-dir "$MAP_DIR"
+
+echo -e "\nDone. Outputs in $OUT_DIR/ and $MAP_DIR/" >&2

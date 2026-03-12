@@ -212,9 +212,9 @@ args.txt
 # Events
 events/
 
-# Excel
-*.xls
-*.xlsx
+# Excel, includes the lock file (.xls#, .xlsx#, etc.)
+*.xls*
+*.xlsx*
 *.csv
 csv_output/
 
@@ -226,5 +226,8 @@ processed_bags/
 
 # KML files
 *.kml
+*.html
 kml/
+html/
+trajectory/
 trajectories/
