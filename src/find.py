@@ -23,6 +23,14 @@ from typing import Dict, List, Optional, Tuple
 
 from genpy import Message
 
+try:
+    import gmplot
+
+    HAS_GMPLOT = True
+except Exception:
+    gmplot = None
+    HAS_GMPLOT = False
+
 # Progress bar support
 try:
     from tqdm import tqdm
@@ -123,12 +131,19 @@ def _get_ros_time_from_header(msg: Message) -> Optional[float]:
         return None
 
 
-def _list_bag_files(input_dir: str) -> List[str]:
+def _list_bag_files(input_path: str) -> List[str]:
+    """Collect .bag files from a directory, or return a single .bag file."""
     results: List[str] = []
-    for root, _dirs, files in os.walk(input_dir):
-        for name in files:
-            if name.endswith(".bag"):
-                results.append(os.path.join(root, name))
+    if os.path.isfile(input_path):
+        if input_path.endswith(".bag"):
+            results.append(os.path.abspath(input_path))
+        return results
+
+    if os.path.isdir(input_path):
+        for root, _dirs, files in os.walk(input_path):
+            for name in files:
+                if name.endswith(".bag"):
+                    results.append(os.path.join(root, name))
     results.sort()
     return results
 
@@ -540,6 +555,142 @@ def _export_kml_trajectories(
     return created_files
 
 
+def _select_marker_indices_by_interval(
+    timestamps: List[float], interval_seconds: float
+) -> List[int]:
+    """Pick nearest sample indices for evenly spaced marker timestamps."""
+    if not timestamps:
+        return []
+    if interval_seconds <= 0:
+        return [0, len(timestamps) - 1] if len(timestamps) > 1 else [0]
+
+    # Calculate marker timestamps using a fixed interval
+    start_time = timestamps[0]
+    end_time = timestamps[-1]
+    target_times: List[float] = []
+    current_time = start_time
+    # Generate all interval timestamps from start to end
+    while current_time <= end_time:
+        target_times.append(current_time)
+        current_time += interval_seconds
+    # Ensure the last trajectory point is included
+    if target_times and target_times[-1] < end_time:
+        target_times.append(end_time)
+
+    # For each interval timestamp, find the nearest GPS sample index
+    marked_indices = set()
+    for target_time in target_times:
+        closest_idx = min(
+            range(len(timestamps)),
+            key=lambda i: abs(timestamps[i] - target_time),
+        )
+        marked_indices.add(closest_idx)
+    return sorted(marked_indices)
+
+
+def _export_gmap_trajectories(
+    all_rows: List[Dict[str, float]],
+    output_dir: str,
+    marker_interval_seconds: float,
+) -> List[str]:
+    """Export Google Maps HTML files for each bag trajectory."""
+    created_files: List[str] = []
+    if not HAS_GMPLOT:
+        print(
+            "Skip gmap export: gmplot is not installed (pip install gmplot).",
+            file=sys.stderr,
+        )
+        return created_files
+
+    bags_data: Dict[str, List[Dict[str, float]]] = {}
+    for row in all_rows:
+        bag_path = row.get("bag_path", "")
+        if bag_path:
+            bags_data.setdefault(bag_path, []).append(row)
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for bag_path, rows in bags_data.items():
+        if not rows:
+            continue
+
+        rows_sorted = sorted(rows, key=lambda r: (r["ros_time"], r["bag_rel_time"]))
+        topic_rows_map: Dict[str, List[Dict[str, float]]] = {}
+        for row in rows_sorted:
+            topic = str(row.get("topic", ""))
+            topic_rows_map.setdefault(topic, []).append(row)
+
+        first_lat = None
+        first_lon = None
+        for row in rows_sorted:
+            try:
+                lat = float(row["lat"])
+                lon = float(row["lon"])
+                if math.isfinite(lat) and math.isfinite(lon):
+                    first_lat = lat
+                    first_lon = lon
+                    break
+            except Exception:
+                continue
+        if first_lat is None or first_lon is None:
+            continue
+
+        gmap = gmplot.GoogleMapPlotter(first_lat, first_lon, 15, map_type="roadmap")
+        topic_colors = [
+            "cornflowerblue",
+            "tomato",
+            "seagreen",
+            "gold",
+            "mediumpurple",
+            "darkorange",
+        ]
+
+        for color_idx, topic in enumerate(sorted(topic_rows_map.keys())):
+            topic_rows = topic_rows_map[topic]
+            latitudes: List[float] = []
+            longitudes: List[float] = []
+            timestamps: List[float] = []
+            for row in topic_rows:
+                try:
+                    lat = float(row["lat"])
+                    lon = float(row["lon"])
+                    ts = float(row["ros_time"])
+                    if math.isfinite(lat) and math.isfinite(lon) and math.isfinite(ts):
+                        latitudes.append(lat)
+                        longitudes.append(lon)
+                        timestamps.append(ts)
+                except Exception:
+                    continue
+
+            if len(latitudes) < 2:
+                continue
+
+            color = topic_colors[color_idx % len(topic_colors)]
+            gmap.plot(latitudes, longitudes, color, edge_width=2.5)
+
+            # Add marker points at the configured time interval.
+            marker_indices = _select_marker_indices_by_interval(
+                timestamps, marker_interval_seconds
+            )
+            for marker_idx in marker_indices:
+                marker_lat = latitudes[marker_idx]
+                marker_lon = longitudes[marker_idx]
+                marker_time = timestamps[marker_idx]
+                marker_title = f"{topic or 'default'} @ {marker_time:.3f}"
+                gmap.marker(marker_lat, marker_lon, color="red", title=marker_title)
+
+        bag_name = os.path.splitext(os.path.basename(bag_path))[0]
+        html_path = os.path.join(output_dir, f"{bag_name}.html")
+        try:
+            gmap.draw(html_path)
+            created_files.append(html_path)
+            print(f"Created gmap HTML: {html_path}", file=sys.stderr)
+        except Exception as e:
+            print(f"Failed to write gmap HTML {html_path}: {e}", file=sys.stderr)
+
+    return created_files
+
+
 def _parse_coordinates(coord_str: str) -> Tuple[float, float]:
     """Parse coordinates from either space-separated or comma-separated format.
 
@@ -679,8 +830,8 @@ def main():
         epilog=textwrap.dedent(
             """
             Examples:
-            # Export KML trajectories only (for route visualization in Google Maps)
-            %(prog)s /path/to/bags --kml-dir ./trajectories
+            # Export trajectory maps only (KML + gmap HTML)
+            %(prog)s /path/to/bags --map-dir ./trajectories
 
             # Find circle crossings with space-separated coordinates
             %(prog)s /path/to/bags 31.2304 121.4737 50 --output events.json
@@ -689,10 +840,10 @@ def main():
             %(prog)s /path/to/bags "31.2304,121.4737" 50 --output events.json
 
             # Export trajectories and find crossings with KML events
-            %(prog)s /path/to/bags "31.2304,121.4737" 50 --kml-dir ./trajectories --kml-events
+            %(prog)s /path/to/bags "31.2304,121.4737" 50 --map-dir ./trajectories --kml-events
 
-            # Use cache for faster repeated runs
-            %(prog)s /path/to/bags --kml-dir ./trajectories --cache
+            # Cache is enabled by default; disable it explicitly when needed
+            %(prog)s /path/to/bags --map-dir ./trajectories --no-cache
 
             # Disable progress bars (useful for scripts)
             %(prog)s /path/to/bags "31.2304,121.4737" 50 --no-progress
@@ -700,7 +851,8 @@ def main():
         ),
     )
     parser.add_argument(
-        "bag_dir", help="Directory containing .bag files (recursively scanned)"
+        "bag_input",
+        help="Input path: either a .bag file or a directory containing .bag files (recursively scanned)",
     )
     parser.add_argument(
         "center_coords",
@@ -725,9 +877,10 @@ def main():
         help="Output file path (.json or .csv). If omitted, prints JSON to stdout",
     )
     parser.add_argument(
-        "--cache",
+        "--no-cache",
         action="store_true",
-        help="Enable preprocessing cache of GPS streams (Parquet/CSV)",
+        dest="no_cache",
+        help="Disable preprocessing cache of GPS streams",
     )
     parser.add_argument(
         "--cache-dir",
@@ -746,9 +899,15 @@ def main():
         help="Merge all GPS topics into one stream when detecting events",
     )
     parser.add_argument(
-        "--kml-dir",
+        "--map-dir",
         default=None,
-        help="Export KML files for trajectory visualization (creates one KML per bag)",
+        help="Export trajectory maps to this directory (creates kml/ and html/ subdirectories)",
+    )
+    parser.add_argument(
+        "--gmap-marker-interval",
+        type=float,
+        default=300.0,
+        help="Marker interval in seconds for gmap output (default: 300)",
     )
     parser.add_argument(
         "--kml-events",
@@ -761,6 +920,10 @@ def main():
         help="Disable progress bars",
     )
     args = parser.parse_args()
+
+    if args.kml_events and not args.map_dir:
+        print("ERROR: --kml-events requires --map-dir", file=sys.stderr)
+        sys.exit(1)
 
     # Determine mode based on arguments
     kml_only_mode = args.center_coords is None and args.radius_m is None
@@ -793,15 +956,15 @@ def main():
             sys.exit(1)
     else:
         center_lat = center_lon = None
-        if args.kml_dir:
+        if args.map_dir:
             print(
-                "KML-only mode: exporting trajectories without circle detection",
+                "Trajectory-only mode: exporting KML and gmap without circle detection",
                 file=sys.stderr,
             )
 
-    bag_files = _list_bag_files(args.bag_dir)
+    bag_files = _list_bag_files(args.bag_input)
     if not bag_files:
-        print("No .bag files found.", file=sys.stderr)
+        print("No .bag files found in the given input path.", file=sys.stderr)
         sys.exit(1)
 
     all_rows: List[Dict[str, float]] = []
@@ -820,7 +983,7 @@ def main():
 
     for bag_path in bag_pbar:
         cache_rows: Optional[List[Dict[str, float]]] = None
-        if args.cache:
+        if not args.no_cache:
             _ensure_dir(args.cache_dir)
             cache_key = _stable_cache_key(bag_path)
             cache_base = os.path.join(args.cache_dir, f"gps_{cache_key}")
@@ -890,7 +1053,7 @@ def main():
             for r in rows:
                 r["bag_path"] = bag_path
             # Optionally write cache
-            if args.cache:
+            if not args.no_cache:
                 if show_progress:
                     bag_pbar.set_description(f"Caching {os.path.basename(bag_path)}")
                 cache_key = _stable_cache_key(bag_path)
@@ -920,11 +1083,24 @@ def main():
         print("No GPS data found in provided bag files.", file=sys.stderr)
         sys.exit(2)
 
-    # Export KML files if requested
-    if args.kml_dir:
-        print("Exporting KML trajectory files...", file=sys.stderr)
-        kml_files = _export_kml_trajectories(all_rows, args.kml_dir)
+    # Export KML and gmap files if requested
+    if args.map_dir:
+        kml_output_dir = os.path.join(args.map_dir, "kml")
+        html_output_dir = os.path.join(args.map_dir, "html")
+        print(
+            f"Exporting KML trajectory files to {kml_output_dir}...",
+            file=sys.stderr,
+        )
+        kml_files = _export_kml_trajectories(all_rows, kml_output_dir)
         print(f"Created {len(kml_files)} trajectory KML files", file=sys.stderr)
+        print(
+            f"Exporting gmap trajectory files to {html_output_dir}...",
+            file=sys.stderr,
+        )
+        gmap_files = _export_gmap_trajectories(
+            all_rows, html_output_dir, args.gmap_marker_interval
+        )
+        print(f"Created {len(gmap_files)} trajectory gmap files", file=sys.stderr)
 
     # If KML-only mode, we're done
     if kml_only_mode:
@@ -954,8 +1130,9 @@ def main():
     # Export events KML if requested
     if args.kml_events and events:
         print("Exporting circle crossing events KML...", file=sys.stderr)
+        kml_output_dir = os.path.join(args.map_dir, "kml")
         events_kml = _export_circle_markers_kml(
-            events, center_lat, center_lon, args.radius_m, args.kml_dir
+            events, center_lat, center_lon, args.radius_m, kml_output_dir
         )
         if events_kml:
             print(f"Created events KML: {events_kml}", file=sys.stderr)

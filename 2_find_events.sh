@@ -11,8 +11,9 @@ BAGS_DIR=${BAGS_DIR/#~/$HOME}
 ARGS_FILE=${2:-"args.txt"}
 
 # Create output directory
+MAP_DIR="trajectories"
 OUT_DIR="events"
-mkdir -p "$OUT_DIR"
+mkdir -p "$MAP_DIR" "$OUT_DIR"
 
 while IFS='|' read -r IDX NAME COORDS RADIUS; do
   # Sanitize name for filename (replace spaces and slashes)
@@ -21,8 +22,7 @@ while IFS='|' read -r IDX NAME COORDS RADIUS; do
   echo "Processing $NAME (index=$IDX, radius=$RADIUS) -> $OUT_FILE" >&2
   python3 src/find.py \
     "$BAGS_DIR" "$COORDS" "$RADIUS" \
-    --cache --cache-dir gps_cache --cache-format parquet \
-    --output "$OUT_FILE"
+    --map-dir "$MAP_DIR" --output "$OUT_FILE"
 done < "$ARGS_FILE"
 
 echo -e "\nDone. Outputs in $OUT_DIR" >&2
