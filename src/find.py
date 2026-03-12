@@ -33,7 +33,7 @@ except Exception:
 
 # Progress bar support
 try:
-    from tqdm import tqdm
+    from tqdm.auto import tqdm
 
     HAS_TQDM = True
 except ImportError:
@@ -259,10 +259,12 @@ def _extract_gps_from_bag(
         # Create progress bar for bag reading
         if show_progress and total_msgs:
             pbar = tqdm(
-                total=total_msgs,
                 desc=f"Reading {bag_name}",
-                unit="msgs",
+                total=total_msgs,
                 disable=not HAS_TQDM or not show_progress,
+                unit="msgs",
+                dynamic_ncols=True,
+                colour="green",
             )
         else:
             pbar = None
@@ -879,7 +881,6 @@ def main():
     parser.add_argument(
         "--no-cache",
         action="store_true",
-        dest="no_cache",
         help="Disable preprocessing cache of GPS streams",
     )
     parser.add_argument(
@@ -904,7 +905,7 @@ def main():
         help="Export trajectory maps to this directory (creates kml/ and html/ subdirectories)",
     )
     parser.add_argument(
-        "--gmap-marker-interval",
+        "--marker-interval",
         type=float,
         default=300.0,
         help="Marker interval in seconds for gmap output (default: 300)",
@@ -978,7 +979,12 @@ def main():
         )
 
     bag_pbar = tqdm(
-        bag_files, desc="Processing bags", unit="bag", disable=not show_progress
+        bag_files,
+        desc="Processing bags",
+        disable=not show_progress,
+        unit="bag",
+        dynamic_ncols=True,
+        colour="green",
     )
 
     for bag_path in bag_pbar:
@@ -1098,7 +1104,7 @@ def main():
             file=sys.stderr,
         )
         gmap_files = _export_gmap_trajectories(
-            all_rows, html_output_dir, args.gmap_marker_interval
+            all_rows, html_output_dir, args.marker_interval
         )
         print(f"Created {len(gmap_files)} trajectory gmap files", file=sys.stderr)
 
