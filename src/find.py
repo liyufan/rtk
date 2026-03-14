@@ -324,11 +324,14 @@ def _detect_circle_events(
     rows_sorted = sorted(rows, key=lambda r: (r["ros_time"], r["bag_rel_time"]))
 
     events: List[CircleEvent] = []
-    # Track inside/outside state per topic to support multiple GPS sources
-    inside_state_by_topic: Dict[str, bool] = {}
+    # Track inside/outside state per stream (bag + topic).
+    # Using only topic would mix same-name topics from different bag files.
+    inside_state_by_stream: Dict[Tuple[str, str], bool] = {}
 
     for r in rows_sorted:
         topic = str(r.get("topic", ""))
+        bag_path = str(r.get("bag_path", ""))
+        stream_key = (bag_path, topic)
         lat = float(r["lat"]) if r.get("lat") is not None else float("nan")
         lon = float(r["lon"]) if r.get("lon") is not None else float("nan")
         if not (math.isfinite(lat) and math.isfinite(lon)):
@@ -337,7 +340,7 @@ def _detect_circle_events(
         d = distance_m(lat, lon, center_lat, center_lon)
         is_inside = d <= radius_m
 
-        was_inside = inside_state_by_topic.get(topic, False)
+        was_inside = inside_state_by_stream.get(stream_key, False)
         if is_inside != was_inside:
             event_type = "enter" if is_inside else "exit"
             events.append(
@@ -351,10 +354,10 @@ def _detect_circle_events(
                     topic=topic,
                 )
             )
-            inside_state_by_topic[topic] = is_inside
+            inside_state_by_stream[stream_key] = is_inside
         else:
-            # maintain state even if unchanged, to initialize absent keys
-            inside_state_by_topic.setdefault(topic, is_inside)
+            # Maintain state even if unchanged, to initialize absent keys.
+            inside_state_by_stream.setdefault(stream_key, is_inside)
 
     return events
 
