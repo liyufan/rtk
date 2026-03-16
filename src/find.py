@@ -19,6 +19,7 @@ import sys
 import textwrap
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from genpy import Message
@@ -655,15 +656,23 @@ def _export_gmap_trajectories(
             latitudes: List[float] = []
             longitudes: List[float] = []
             timestamps: List[float] = []
+            rel_times: List[float] = []
             for row in topic_rows:
                 try:
                     lat = float(row["lat"])
                     lon = float(row["lon"])
                     ts = float(row["ros_time"])
-                    if math.isfinite(lat) and math.isfinite(lon) and math.isfinite(ts):
+                    rel = float(row["bag_rel_time"])
+                    if (
+                        math.isfinite(lat)
+                        and math.isfinite(lon)
+                        and math.isfinite(ts)
+                        and math.isfinite(rel)
+                    ):
                         latitudes.append(lat)
                         longitudes.append(lon)
                         timestamps.append(ts)
+                        rel_times.append(rel)
                 except Exception:
                     continue
 
@@ -681,7 +690,15 @@ def _export_gmap_trajectories(
                 marker_lat = latitudes[marker_idx]
                 marker_lon = longitudes[marker_idx]
                 marker_time = timestamps[marker_idx]
-                marker_title = f"{topic or 'default'} @ {marker_time:.3f}"
+                marker_rel_time = rel_times[marker_idx]
+                readable_time = datetime.fromtimestamp(marker_time).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+                marker_title = (
+                    f"{readable_time} | "
+                    f"ROS time: {marker_time:.3f} | "
+                    f"Relative: {marker_rel_time:.3f}"
+                )
                 gmap.marker(marker_lat, marker_lon, color="red", title=marker_title)
 
         bag_name = os.path.splitext(os.path.basename(bag_path))[0]
@@ -861,18 +878,18 @@ def main():
     )
     parser.add_argument(
         "center_coords",
-        nargs="?",
+        nargs=argparse.OPTIONAL,
         help="Circle center coordinates - can be 'lat,lon' or 'lat lon' format (required for circle crossing detection or --kml-events)",
     )
     parser.add_argument(
         "radius_m",
         type=float,
-        nargs="?",
+        nargs=argparse.OPTIONAL,
         help="Circle radius in meters (e.g., 50) - required for circle crossing detection or --kml-events",
     )
     parser.add_argument(
         "--topics",
-        nargs="*",
+        nargs=argparse.ZERO_OR_MORE,
         default=None,
         help="Optional list of GPS topics to include (defaults to auto-detect)",
     )

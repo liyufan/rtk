@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Record odometry from rosbag and save to csv
-# Usage: ./3_record_odometry.sh [project_name] [bags_or_events_directory] [save_directory]
+# Usage: ./3_record_odometry.sh [project_name]
 
 set -euo pipefail
 
