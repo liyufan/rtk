@@ -1,12 +1,16 @@
-pandas
-pyarrow
+# required by ROS
 pyyaml
-fastparquet
 pycryptodomex
 gnupg
 rospkg
+
+# required by this repo
+pandas
+pyarrow
+fastparquet
 geographiclib
 pyproj
 openpyxl
 xlrd
 tqdm
+gmplot

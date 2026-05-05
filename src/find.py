@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-CLI tool to scan ROS1 bag files, extract GPS (sensor_msgs/NavSatFix),
+CLI tool to scan ROS1 bag files, extract GPS (sensor_msgs/NavSatFix,
+or gnss_comm/GnssPVTSolnMsg when no NavSatFix topic exists),
 and find enter/exit events for a given geodesic circle.
 
 Outputs absolute ROS times (message header.stamp where available) and
 relative times (to the bag start time).
 
-Supports optional preprocessing cache (Parquet preferred, falls back to CSV)
+Supports preprocessing cache (Parquet preferred, falls back to CSV)
 to avoid re-reading bags on repeated runs.
 """
 
@@ -23,6 +24,9 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from genpy import Message
+
+GPS_EPOCH_UNIX = 315964800  # 1980-01-06 00:00:00 UTC
+SECONDS_PER_GPS_WEEK = 604800
 
 try:
     import gmplot
@@ -111,7 +115,7 @@ def _import_distance_impl():
 distance_m = _import_distance_impl()
 
 
-def _is_navsatfix(msg: Message) -> bool:
+def _is_navsatfix(msg: Message) -> bool:  # topic: /ublox_driver/receiver_lla
     """Check by duck-typing to avoid strict import dependency for types."""
     try:
         # sensor_msgs/NavSatFix has fields: latitude, longitude, altitude, status, position_covariance, etc.
@@ -125,11 +129,30 @@ def _is_navsatfix(msg: Message) -> bool:
         return False
 
 
+def _is_gnss_pvt_soln(msg: Message) -> bool:  # topic: /ublox_driver/receiver_pvt
+    """Check for gnss_comm/GnssPVTSolnMsg without importing the custom package."""
+    try:
+        return (
+            hasattr(msg, "time")
+            and hasattr(msg.time, "week")
+            and hasattr(msg.time, "tow")
+            and hasattr(msg, "valid_fix")
+            and hasattr(msg, "latitude")
+            and hasattr(msg, "longitude")
+        )
+    except Exception:
+        return False
+
+
 def _get_ros_time_from_header(msg: Message) -> Optional[float]:
     try:
         return float(msg.header.stamp.to_sec())  # type: ignore[attr-defined]
     except Exception:
         return None
+
+
+def _gps_week_tow_to_unix_time(week: int, tow: float) -> float:
+    return GPS_EPOCH_UNIX + (week * SECONDS_PER_GPS_WEEK) + tow
 
 
 def _list_bag_files(input_path: str) -> List[str]:
@@ -236,17 +259,26 @@ def _extract_gps_from_bag(
     rows: List[Dict[str, float]] = []
     with rosbag.Bag(bag_path, "r") as bag:
         bag_start_wall = float(bag.get_start_time())
-        # If user provided topic filters, restrict; else, scan connections to find NavSatFix topics first
+        # If user provided topic filters, restrict; else, prefer standard NavSatFix.
+        # Only fall back to gnss_comm/GnssPVTSolnMsg when a bag has no NavSatFix topic.
         topics_to_read: Optional[List[str]] = None
         if topic_filters:
             topics_to_read = topic_filters
         else:
             topics_to_read = []
             for c in bag._get_connections():  # private but effective
-                if c.datatype.endswith("/NavSatFix"):
+                if c.datatype.endswith(
+                    "/NavSatFix"
+                ):  # topic: /ublox_driver/receiver_lla
                     topics_to_read.append(c.topic)
             if not topics_to_read:
-                # As fallback, read all topics and filter by duck typing
+                for c in bag._get_connections():  # private but effective
+                    if (
+                        c.datatype == "gnss_comm/GnssPVTSolnMsg"
+                    ):  # topic: /ublox_driver/receiver_pvt
+                        topics_to_read.append(c.topic)
+            if not topics_to_read:
+                # As fallback, read all topics and filter by duck typing.
                 topics_to_read = None
 
         # Get total message count for progress bar
@@ -275,18 +307,31 @@ def _extract_gps_from_bag(
                 if pbar:
                     pbar.update(1)
 
-                try:
-                    if not _is_navsatfix(msg):
+                if _is_navsatfix(msg):
+                    try:
+                        lat = float(msg.latitude)
+                        lon = float(msg.longitude)
+                    except Exception:
                         continue
-                    lat = float(msg.latitude)
-                    lon = float(msg.longitude)
-                except Exception:
+
+                    header_time = _get_ros_time_from_header(msg)
+                    if header_time is None:
+                        # fall back to connection time 't' from bag
+                        header_time = float(t.to_sec())
+                elif _is_gnss_pvt_soln(msg):
+                    try:
+                        if not msg.valid_fix:
+                            continue
+                        lat = float(msg.latitude)
+                        lon = float(msg.longitude)
+                        header_time = _gps_week_tow_to_unix_time(
+                            int(msg.time.week), float(msg.time.tow)
+                        )
+                    except Exception:
+                        continue
+                else:
                     continue
 
-                header_time = _get_ros_time_from_header(msg)
-                if header_time is None:
-                    # fall back to connection time 't' from bag
-                    header_time = float(t.to_sec())
                 rel_time = float(header_time - bag_start_wall)
 
                 rows.append(

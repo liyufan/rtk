@@ -4,7 +4,7 @@
 ```bash
 conda create -n rtk python=3
 conda activate rtk
-pip install -r requirements.txt
+pip install -r requirements.txt -U
 ```
 
 ## 1. Parse excel to args.txt
