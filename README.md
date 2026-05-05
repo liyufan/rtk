@@ -32,3 +32,9 @@ This command will generate `csv_output` directory containing CSV files extracted
 ```bash
 ./4_extract_odom.sh
 ```
+
+## 5. Clean outputs
+This command will clean all outputs.
+```bash
+yes | ./5_clean_outputs.sh
+```
