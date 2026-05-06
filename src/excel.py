@@ -289,19 +289,30 @@ def load_rows_from_excel(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Parse Excel and emit args for find.py"
+        description="Parse Excel and emit args for find.py",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("excel", help="Path to the Excel file (.xls/.xlsx)")
     parser.add_argument(
-        "--default-radius",
+        "-r",
+        "--radius",
         type=float,
         default=50.0,
         help="Default radius (meters) when missing",
     )
     parser.add_argument(
-        "--format", choices=["args", "jsonl"], default="args", help="Output format"
+        "-f",
+        "--format",
+        choices=["args", "jsonl"],
+        default="args",
+        help="Output format",
     )
-    parser.add_argument("--sheet", default=None, help="Excel sheet name (optional)")
+    parser.add_argument(
+        "-s",
+        "--sheet",
+        default=None,
+        help="Excel sheet name (optional)",
+    )
     args = parser.parse_args()
 
     xls_path = args.excel
@@ -309,7 +320,7 @@ def main():
         print(f"ERROR: Excel file not found: {xls_path}", file=sys.stderr)
         sys.exit(1)
 
-    rows = load_rows_from_excel(xls_path, args.default_radius, args.sheet)
+    rows = load_rows_from_excel(xls_path, args.radius, args.sheet)
     if not rows:
         # Emit detected columns to help user adjust headers
         try:

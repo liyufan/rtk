@@ -933,54 +933,64 @@ def main():
         help="Circle radius in meters (e.g., 50) - required for circle crossing detection or --kml-events",
     )
     parser.add_argument(
+        "-t",
         "--topics",
         nargs=argparse.ZERO_OR_MORE,
         default=None,
         help="Optional list of GPS topics to include (defaults to auto-detect)",
     )
     parser.add_argument(
+        "-o",
         "--output",
         default=None,
         help="Output file path (.json or .csv). If omitted, prints JSON to stdout",
     )
     parser.add_argument(
+        "-n",
         "--no-cache",
         action="store_true",
         help="Disable preprocessing cache of GPS streams",
     )
     parser.add_argument(
+        "-c",
         "--cache-dir",
         default="gps_cache",
         help="Cache directory path (default: gps_cache)",
     )
     parser.add_argument(
+        "-f",
         "--cache-format",
         choices=["parquet", "csv"],
         default="parquet",
         help="Preferred cache format",
     )
     parser.add_argument(
+        "-M",
         "--merge-topics",
         action="store_true",
         help="Merge all GPS topics into one stream when detecting events",
     )
     parser.add_argument(
+        "-m",
         "--map-dir",
         default=None,
         help="Export trajectory maps to this directory (creates kml/ and html/ subdirectories)",
     )
     parser.add_argument(
+        "-i",
         "--marker-interval",
         type=float,
         default=300.0,
         help="Marker interval in seconds for gmap output (default: 300)",
     )
     parser.add_argument(
+        "-k",
         "--kml-events",
         action="store_true",
         help="Also export KML showing circle and enter/exit events",
     )
     parser.add_argument(
+        "-q",
         "--no-progress",
         action="store_true",
         help="Disable progress bars",

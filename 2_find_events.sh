@@ -23,7 +23,7 @@ while IFS='|' read -r IDX NAME COORDS RADIUS; do
   python3 src/find.py "$BAGS_DIR" "$COORDS" "$RADIUS" --output "$OUT_FILE"
 done < "$ARGS_FILE"
 
-# Export maps
+# Export maps here to avoid repeated exports in the loop above
 echo -e "\nExporting maps to $MAP_DIR/" >&2
 python3 src/find.py "$BAGS_DIR" --map-dir "$MAP_DIR"
 

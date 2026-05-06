@@ -6,6 +6,11 @@ conda create -n rtk python=3
 conda activate rtk
 pip install -r requirements.txt -U
 ```
+For users who only want to export trajectory maps without finding events, just skip the steps below and run:
+```bash
+python3 src/find.py [bags_dir] -m ./trajectories
+```
+where `[bags_dir]` is the directory containing the rosbags.
 
 ## 1. Parse excel to args.txt
 This command will generate `args.txt` in the current directory. Check `args.txt` to make sure the excel is parsed correctly. Remove the rows you don't want to process.

@@ -352,11 +352,13 @@ def main():
     # Create mutually exclusive group for input source
     input_group = parser.add_mutually_exclusive_group()
     input_group.add_argument(
+        '-e',
         '--events-dir',
         default=None,
         help='JSON files directory',
     )
     input_group.add_argument(
+        '-b',
         '--bags-dir',
         default=None,
         help='Directory containing bag files (bags already filtered by `rosbag filter` command)',
@@ -369,11 +371,13 @@ def main():
         help='Directory to save recorded files',
     )
     parser.add_argument(
+        '-n',
         '--project-name',
         default='CEDD',
         help='Project name',
     )
     parser.add_argument(
+        '-d',
         '--dry-run',
         action='store_true',
         help='Dry run mode, only show commands without actual execution',

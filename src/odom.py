@@ -138,11 +138,13 @@ def main():
         help='Directory to save output CSV files',
     )
     parser.add_argument(
+        '-t',
         '--topic',
         default='/Odometry',
         help='ROS topic to extract from',
     )
     parser.add_argument(
+        '-p',
         '--pattern',
         default='*.bag',
         help='File pattern to match',
