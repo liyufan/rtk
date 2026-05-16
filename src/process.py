@@ -16,12 +16,13 @@ from typing import Optional
 
 def process_events(
     json_file: str,
-    project_name: str,
-    intersection_num: str,
     save_dir: str,
     dry_run: bool = False,
 ):
     """Process events in a single JSON file"""
+    # Derive output prefix from the JSON filename (without extension)
+    json_name = os.path.splitext(os.path.basename(json_file))[0]
+
     try:
         with open(json_file, 'r') as f:
             events = json.load(f)
@@ -44,7 +45,7 @@ def process_events(
             original_bag_name = os.path.basename(bag_path)
 
             # Determine recording file name, save to save directory
-            output_bag_name = f'{project_name}_J{intersection_num}_{original_bag_name}'
+            output_bag_name = f'{json_name}_{original_bag_name}'
             output_bag_path = os.path.join(save_dir, output_bag_name)
 
             print(f'Preparing to process bag file: {original_bag_name}')
@@ -116,7 +117,6 @@ def process_events(
 
 def process_bag_directory(
     bags_dir: str,
-    project_name: str,
     save_dir: str,
     dry_run: bool = False,
 ):
@@ -134,10 +134,6 @@ def process_bag_directory(
     for i, bag_path in enumerate(sorted(bag_files), 1):
         bag_name = os.path.basename(bag_path)
         bag_name_without_ext = os.path.splitext(bag_name)[0]
-
-        # Add project name prefix if not present
-        if project_name.lower() not in bag_name_without_ext.lower():
-            bag_name_without_ext = f'{project_name}_{bag_name_without_ext}'
 
         output_prefix = os.path.join(save_dir, bag_name_without_ext)
 
@@ -370,12 +366,7 @@ def main():
         default='processed_bags',
         help='Directory to save recorded files',
     )
-    parser.add_argument(
-        '-n',
-        '--project-name',
-        default='CEDD',
-        help='Project name',
-    )
+
     parser.add_argument(
         '-d',
         '--dry-run',
@@ -395,7 +386,6 @@ def main():
         os.makedirs(args.save_dir, exist_ok=True)
 
     print(f"Save directory: {args.save_dir}")
-    print(f"Project name: {args.project_name}")
     if args.dry_run:
         print("*** Dry run mode - only show commands, no actual execution ***")
     print("==========================================")
@@ -411,9 +401,7 @@ def main():
             sys.exit(1)
 
         print(f"Processing bag directory: {args.bags_dir}")
-        process_bag_directory(
-            args.bags_dir, args.project_name, args.save_dir, args.dry_run
-        )
+        process_bag_directory(args.bags_dir, args.save_dir, args.dry_run)
     else:
         # Process JSON events files
         if not os.path.isdir(args.events_dir):
@@ -435,21 +423,9 @@ def main():
         # Process each JSON file
         for json_file in sorted(json_files):
             filename = os.path.basename(json_file)
-            filename_without_ext = os.path.splitext(filename)[0]
 
-            # Extract intersection number from filename (assuming format "number_intersection_name")
-            intersection_num = filename_without_ext.split('_')[0]
-
-            print(
-                f'Processing file: {filename} (intersection number: {intersection_num})'
-            )
-            process_events(
-                json_file,
-                args.project_name,
-                intersection_num,
-                args.save_dir,
-                args.dry_run,
-            )
+            print(f'Processing file: {filename}')
+            process_events(json_file, args.save_dir, args.dry_run)
             print('==========================================')
 
     print('All files processing completed')

@@ -27,9 +27,9 @@ This command will generate `events` directory containing JSON files of enter/exi
 ## 3. Record odometry
 This command will generate `processed_bags` directory containing rosbags of odometry data.
 
-**Please modify the script to use either events directory or bags directory.**
+**Please modify the script to use either events directory or filtered bags directory.**
 ```bash
-./3_record_odometry.sh [project_name] [bags_or_events_directory]
+./3_record_odometry.sh [events_or_bags_directory]
 ```
 
 ## 4. Extract odometry to CSV
