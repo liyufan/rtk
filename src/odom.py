@@ -67,8 +67,8 @@ def extract_odometry_to_csv(bag_file: str, output_csv: str, topic: str = '/Odome
     try:
         with open(output_csv, 'w', newline='') as csvfile:
             # Define CSV header
-            # Format: Row, x, y, z, qx, qy, qz, qw, T
-            header = ['Row', 'X', 'Y', 'Yaw', 'T']
+            # Format: Row, x, y, z, roll, pitch, yaw, T
+            header = ['Row Name', 'X', 'Y', 'Z', 'Roll', 'Pitch', 'Yaw', 'T']
 
             writer = csv.writer(csvfile)
             writer.writerow(header)  # Write the header row
@@ -106,7 +106,7 @@ def extract_odometry_to_csv(bag_file: str, output_csv: str, topic: str = '/Odome
                 tcov = msg.twist.covariance
 
                 # Write data to CSV
-                writer.writerow([row, x, y, yaw, timestamp])
+                writer.writerow([row, x, y, z, roll, pitch, yaw, timestamp])
                 row += 1
 
     except Exception as e:
